@@ -3,6 +3,9 @@ from fpdf import FPDF
 import tkinter as tk
 from tkinter import messagebox, Toplevel, scrolledtext, filedialog
 import re
+from docx import Document
+from docx.shared import Pt
+
 
 API_KEY = "AIzaSyA90mSpQCPKjt8d-mRRD4gP94GsxVqf9KE"
 genai.configure(api_key=API_KEY)
@@ -110,6 +113,57 @@ def corrigir_caracteres(texto):
     texto = texto.replace("\u2014", "--")
     texto = texto.replace("•", "-")
     return texto
+def salvar_como_docx(texto):
+    """
+    Salva o currículo como um arquivo .docx, removendo asteriscos, padronizando os marcadores e mantendo texto em preto.
+    """
+    file_path = filedialog.asksaveasfilename(
+        defaultextension=".docx",
+        filetypes=[("Documentos do Word", "*.docx")]
+    )
+    if not file_path:
+        return
+
+    doc = Document()
+    style = doc.styles['Normal']
+    font = style.font
+    font.name = 'Arial'
+    font.size = Pt(11)
+
+    linhas = texto.split("\n")
+    linhas = [corrigir_caracteres(l.strip()) for l in linhas]
+
+    if len(linhas) < 2:
+        messagebox.showerror("Erro", "Texto inválido.")
+        return
+
+    # Remover asteriscos do nome
+    nome_limpo = re.sub(r"^\*+(.*?)\*+$", r"\1", linhas[0])
+    doc.add_heading(nome_limpo, level=0)
+
+    # Contato
+    doc.add_paragraph(linhas[1])
+    doc.add_paragraph("-" * 30)
+
+    for linha in linhas[2:]:
+        if not linha.strip():
+            doc.add_paragraph()
+            continue
+
+        # Remover asteriscos
+        linha = linha.replace("*", "").strip()
+
+        # Verificar se é um título em maiúsculas
+        if linha.isupper():
+            doc.add_paragraph(linha, style='Heading 2')
+        elif linha.startswith("-") or linha.startswith("•"):
+            doc.add_paragraph(linha, style='List Bullet')
+        else:
+            # Se for item comum (ex: tópicos), adiciona com marcador "-"
+            doc.add_paragraph(f"- {linha}")
+
+    doc.save(file_path)
+    messagebox.showinfo("Sucesso", f"Currículo salvo em: {file_path}")
 
 def salvar_como_pdf(texto):
     """
@@ -168,7 +222,7 @@ def salvar_como_pdf(texto):
     messagebox.showinfo("Sucesso", f"Currículo salvo em: {file_path}")
 
 def mostrar_previa(texto):
-    """Exibe janela de prévia, permitindo edição e salvamento do PDF."""
+    """Exibe janela de prévia, permitindo edição e salvamento em PDF ou DOCX."""
     preview_window = Toplevel(root)
     preview_window.title("Prévia do Currículo")
 
@@ -179,13 +233,21 @@ def mostrar_previa(texto):
     preview_text.pack(padx=10, pady=10)
     preview_text.insert("1.0", texto)
 
-    def salvar_edicao():
+    def salvar_edicao_pdf():
         texto_editado = preview_text.get("1.0", tk.END).strip()
         salvar_como_pdf(texto_editado)
         preview_window.destroy()
 
-    btn_salvar = tk.Button(preview_window, text="Salvar PDF", font=("Arial", 12), command=salvar_edicao)
-    btn_salvar.pack(pady=10)
+    def salvar_edicao_docx():
+        texto_editado = preview_text.get("1.0", tk.END).strip()
+        salvar_como_docx(texto_editado)
+        preview_window.destroy()
+
+    btn_pdf = tk.Button(preview_window, text="Salvar como PDF", font=("Arial", 12), command=salvar_edicao_pdf)
+    btn_pdf.pack(pady=5)
+
+    btn_docx = tk.Button(preview_window, text="Salvar como DOCX", font=("Arial", 12), command=salvar_edicao_docx)
+    btn_docx.pack(pady=5)
 
 
 def gerar_e_prever():
