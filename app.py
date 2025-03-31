@@ -91,19 +91,6 @@ def gerar_curriculo_gemini(dados):
         print("Erro ao chamar Gemini:", e)
         return "Erro ao gerar currículo com a API do Gemini."
 
-def aplicar_negrito(preview_text):
-    """
-    Aplica a marcação de negrito Markdown ao texto selecionado na prévia.
-    """
-    try:
-        start = preview_text.index(tk.SEL_FIRST)
-        end = preview_text.index(tk.SEL_LAST)
-        texto_selecionado = preview_text.get(start, end)
-        preview_text.delete(start, end)
-        preview_text.insert(start, f"**{texto_selecionado}**")
-    except tk.TclError:
-        messagebox.showwarning("Atenção", "Selecione um texto para aplicar negrito.")
-
 def converter_markdown_pdf(linha):
     """
     Converte Markdown para formatação PDF.
@@ -191,10 +178,6 @@ def mostrar_previa(texto):
     preview_text = scrolledtext.ScrolledText(preview_window, height=20, width=80, wrap="word", font=("Arial", 12))
     preview_text.pack(padx=10, pady=10)
     preview_text.insert("1.0", texto)
-
-    btn_negrito = tk.Button(preview_window, text="Negrito", font=("Arial", 12),
-                            command=lambda: aplicar_negrito(preview_text))
-    btn_negrito.pack(pady=5)
 
     def salvar_edicao():
         texto_editado = preview_text.get("1.0", tk.END).strip()
