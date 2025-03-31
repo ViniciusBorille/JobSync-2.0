@@ -3,7 +3,9 @@ from fpdf import FPDF
 import tkinter as tk
 from tkinter import messagebox, Toplevel, scrolledtext, filedialog
 import re
-
+from docx import Document
+from docx.shared import Pt
+from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 API_KEY = "AIzaSyA90mSpQCPKjt8d-mRRD4gP94GsxVqf9KE"
 genai.configure(api_key=API_KEY)
 
@@ -93,14 +95,14 @@ def gerar_curriculo_gemini(dados):
 
 def converter_markdown_pdf(linha):
     """
-    Converte Markdown para formatação PDF.
-    Se a linha inteira estiver entre **, retorna (texto_sem_asteriscos, True).
-    Caso contrário, remove os ** e retorna (texto_sem_asteriscos, False).
+    Converte texto markdown com negrito para texto plano.
+    Detecta se a linha é um título (inteiramente em negrito).
     """
-    if re.match(r"^\*\*(.*?)\*\*$", linha):
-        return re.sub(r"^\*\*(.*?)\*\*$", r"\1", linha), True
+    if re.match(r"^\*\*(.+?)\*\*$", linha):
+        return re.sub(r"^\*\*(.+?)\*\*$", r"\1", linha), True
     else:
-        return re.sub(r"\*\*(.*?)\*\*", r"\1", linha), False
+        linha_sem_asteriscos = re.sub(r"\*\*(.+?)\*\*", r"\1", linha)
+        return linha_sem_asteriscos, False
 
 def corrigir_caracteres(texto):
     """
@@ -166,9 +168,14 @@ def salvar_como_pdf(texto):
 
     pdf.output(file_path)
     messagebox.showinfo("Sucesso", f"Currículo salvo em: {file_path}")
-
+def limpar_asteriscos_extras(texto):
+    """
+    Remove todos os asteriscos (*, **) residuais do texto.
+    Útil para remover formatação Markdown vinda da IA.
+    """
+    return re.sub(r"\*+", "", texto)
 def mostrar_previa(texto):
-    """Exibe janela de prévia, permitindo edição e salvamento do PDF."""
+    """Exibe janela de prévia, permitindo edição e salvamento do PDF e DOCX."""
     preview_window = Toplevel(root)
     preview_window.title("Prévia do Currículo")
 
@@ -181,12 +188,43 @@ def mostrar_previa(texto):
 
     def salvar_edicao():
         texto_editado = preview_text.get("1.0", tk.END).strip()
+        texto_editado = limpar_asteriscos_extras(texto_editado)
         salvar_como_pdf(texto_editado)
         preview_window.destroy()
 
-    btn_salvar = tk.Button(preview_window, text="Salvar PDF", font=("Arial", 12), command=salvar_edicao)
+    btn_salvar = tk.Button(
+        preview_window,
+        text="Salvar PDF",
+        font=("Arial", 12),
+        command=salvar_edicao
+    )
     btn_salvar.pack(pady=10)
 
+    btn_docx = tk.Button(
+        preview_window,
+        text="Salvar DOCX",
+        font=("Arial", 12),
+        command=lambda: salvar_como_docx(
+            limpar_asteriscos_extras(preview_text.get("1.0", tk.END).strip())
+        )
+    )
+    btn_docx.pack(pady=5)
+
+
+    for linha in linhas[2:]:
+        if not linha or set(linha) == {"-"}:
+            doc.add_paragraph()
+            continue
+    
+        texto_convertido, is_negrito = converter_markdown_pdf(linha)
+        if is_negrito:
+            doc.add_heading(texto_convertido.upper(), level=2)
+        else:
+            par = doc.add_paragraph(texto_convertido)
+            par.style.font.size = Pt(11)
+
+    doc.save(file_path)
+    messagebox.showinfo("Sucesso", f"Currículo salvo em: {file_path}")
 
 def gerar_e_prever():
     """
