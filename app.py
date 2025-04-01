@@ -94,16 +94,40 @@ def gerar_curriculo_gemini(dados):
         print("Erro ao chamar Gemini:", e)
         return "Erro ao gerar currículo com a API do Gemini."
 
+import re
+
 def converter_markdown_pdf(linha):
     """
     Converte Markdown para formatação PDF.
-    Se a linha inteira estiver entre **, retorna (texto_sem_asteriscos, True).
-    Caso contrário, remove os ** e retorna (texto_sem_asteriscos, False).
+    Se a linha inteira estiver entre **, retorna (texto_sem_asteriscos, True) para aplicar negrito.
+    Caso contrário, remove a formatação de negrito inline (se houver) e todos os '*' remanescentes,
+    retornando (texto_sem_asteriscos, False).
+    """
+    # Caso a linha seja inteiramente negrito, ex: **José da Silva**
+    if re.match(r"^\*\*(.*?)\*\*$", linha):
+        texto_sem_asteriscos = re.sub(r"^\*\*(.*?)\*\*$", r"\1", linha)
+        return texto_sem_asteriscos, True
+    else:
+        # Remove formatação de negrito inline, se existir (ex: **texto** no meio da linha)
+        texto_sem_asteriscos = re.sub(r"\*\*(.*?)\*\*", r"\1", linha)
+        # Remove qualquer outro asterisco isolado
+        texto_sem_asteriscos = texto_sem_asteriscos.replace("*", "")
+        return texto_sem_asteriscos, False
+
+def converter_markdown_docx(linha):
+    """
+    Converte Markdown para formatação no DOCX.
+    Se a linha estiver inteiramente entre **, retorna (texto_sem_asteriscos, True) para aplicar negrito.
+    Caso contrário, remove a formatação de negrito inline e quaisquer asteriscos remanescentes,
+    retornando (texto_sem_asteriscos, False).
     """
     if re.match(r"^\*\*(.*?)\*\*$", linha):
-        return re.sub(r"^\*\*(.*?)\*\*$", r"\1", linha), True
+        texto_sem_asteriscos = re.sub(r"^\*\*(.*?)\*\*$", r"\1", linha)
+        return texto_sem_asteriscos, True
     else:
-        return re.sub(r"\*\*(.*?)\*\*", r"\1", linha), False
+        texto_sem_asteriscos = re.sub(r"\*\*(.*?)\*\*", r"\1", linha)
+        texto_sem_asteriscos = texto_sem_asteriscos.replace("*", "")
+        return texto_sem_asteriscos, False
 
 def corrigir_caracteres(texto):
     """
@@ -115,7 +139,8 @@ def corrigir_caracteres(texto):
     return texto
 def salvar_como_docx(texto):
     """
-    Salva o currículo como um arquivo .docx, removendo asteriscos, padronizando os marcadores e mantendo texto em preto.
+    Salva o currículo como um arquivo .docx, removendo os asteriscos, padronizando os marcadores
+    e mantendo o texto formatado conforme a presença de Markdown para negrito.
     """
     file_path = filedialog.asksaveasfilename(
         defaultextension=".docx",
@@ -137,12 +162,13 @@ def salvar_como_docx(texto):
         messagebox.showerror("Erro", "Texto inválido.")
         return
 
-    # Remover asteriscos do nome
-    nome_limpo = re.sub(r"^\*+(.*?)\*+$", r"\1", linhas[0])
-    doc.add_heading(nome_limpo, level=0)
+    # Processa o nome removendo os asteriscos e mantendo o negrito se necessário
+    nome, _ = converter_markdown_docx(linhas[0])
+    doc.add_heading(nome, level=0)
 
-    # Contato
-    doc.add_paragraph(linhas[1])
+    # Processa o contato
+    contato, _ = converter_markdown_docx(linhas[1])
+    doc.add_paragraph(contato)
     doc.add_paragraph("-" * 30)
 
     for linha in linhas[2:]:
@@ -150,21 +176,19 @@ def salvar_como_docx(texto):
             doc.add_paragraph()
             continue
 
-        # Remover asteriscos
-        linha = linha.replace("*", "").strip()
-
-        # Verificar se é um título em maiúsculas
-        if linha.isupper():
-            doc.add_paragraph(linha, style='Heading 2')
-        elif linha.startswith("-") or linha.startswith("•"):
-            doc.add_paragraph(linha, style='List Bullet')
+        linha_formatada, is_negrito = converter_markdown_docx(linha)
+        
+        if is_negrito:
+            # Se a linha estiver em negrito, utiliza o estilo de título (Heading 2)
+            doc.add_paragraph(linha_formatada, style='Heading 2')
+        elif linha_formatada.startswith("-") or linha_formatada.startswith("•"):
+            doc.add_paragraph(linha_formatada, style='List Bullet')
         else:
-            # Se for item comum (ex: tópicos), adiciona com marcador "-"
-            doc.add_paragraph(f"- {linha}")
+            # Caso seja um item comum, adiciona com marcador "-"
+            doc.add_paragraph(f"- {linha_formatada}")
 
     doc.save(file_path)
     messagebox.showinfo("Sucesso", f"Currículo salvo em: {file_path}")
-
 def salvar_como_pdf(texto):
     """
     Salva o currículo em PDF, aplicando formatação e fonte Arial.
@@ -187,7 +211,8 @@ def salvar_como_pdf(texto):
         messagebox.showerror("Erro", "Texto inválido.")
         return
 
-    nome = linhas[0]
+    # Processa o nome para remover os asteriscos
+    nome, _ = converter_markdown_pdf(linhas[0])
     contato = linhas[1]
 
     pdf.set_font("Arial", "B", 22)
@@ -211,7 +236,7 @@ def salvar_como_pdf(texto):
         if is_negrito:
             pdf.ln(2)
             pdf.set_font("Arial", "B", 14)
-            pdf.multi_cell(0, 8, texto_convertido.upper())
+            pdf.multi_cell(0, 8, texto_convertido)
             pdf.ln(4)
         else:
             pdf.set_font("Arial", "", 12)
