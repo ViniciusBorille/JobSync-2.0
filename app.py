@@ -1,10 +1,13 @@
 import google.generativeai as genai
 from fpdf import FPDF
 import tkinter as tk
+from tkinter import ttk
 from tkinter import messagebox, Toplevel, scrolledtext, filedialog
 import re
 from docx import Document
 from docx.shared import Pt
+from db import salvar_curriculo_no_banco
+from db import listar_curriculos, obter_curriculo_por_id
 
 
 API_KEY = "AIzaSyA90mSpQCPKjt8d-mRRD4gP94GsxVqf9KE"
@@ -72,7 +75,7 @@ def gerar_curriculo_gemini(dados):
     Idiomas:
     {dados['idiomas']}
 
-    Retorne apenas o currículo, sem mensagens extras, de forma organizada.
+    Retorne apenas o currículo em Português do Brasil, sem mensagens extras, sem dicas de como melhorar, de forma organizada e simples.
     """
 
     try:
@@ -264,7 +267,37 @@ def gerar_e_prever():
         messagebox.showerror("Erro", texto_curriculo)
         return
 
+    salvar_curriculo_no_banco(dados, texto_curriculo)  # <-- salvar no PostgreSQL
     mostrar_previa(texto_curriculo)
+def abrir_seletor_curriculos():
+    seletor_window = Toplevel(root)
+    seletor_window.title("Currículos Salvos")
+
+    label = tk.Label(seletor_window, text="Selecione um currículo salvo:", font=("Arial", 12))
+    label.pack(pady=10)
+
+    opcoes = listar_curriculos()
+    if not opcoes:
+        tk.Label(seletor_window, text="Nenhum currículo encontrado.").pack(pady=10)
+        return
+
+    ids_nomes = [f"{id} - {nome}" for id, nome in opcoes]
+    id_por_nome = {f"{id} - {nome}": id for id, nome in opcoes}
+
+    combo = ttk.Combobox(seletor_window, values=ids_nomes, font=("Arial", 12), width=50)
+    combo.pack(pady=10)
+
+    def mostrar_curriculo_selecionado():
+        selecionado = combo.get()
+        if not selecionado:
+            return
+        curriculo_id = id_por_nome[selecionado]
+        texto = obter_curriculo_por_id(curriculo_id)
+        if texto:
+            mostrar_previa(texto)
+
+    btn = tk.Button(seletor_window, text="Visualizar Currículo", font=("Arial", 12), command=mostrar_curriculo_selecionado)
+    btn.pack(pady=10)
 
 def preencher_campos_teste():
     if nome_entry.get().startswith("Ex:"):
@@ -342,6 +375,9 @@ gerar_btn.pack(side="left", padx=5)
 
 teste_btn = tk.Button(btn_frame, text="Preencher Teste", font=("Arial", 12), command=preencher_campos_teste)
 teste_btn.pack(side="left", padx=5)
+
+ver_salvos_btn = tk.Button(btn_frame, text="Ver Currículos Salvos", font=("Arial", 12), command=abrir_seletor_curriculos)
+ver_salvos_btn.pack(side="left", padx=5)
 
 for i in range(2):
     main_frame.grid_columnconfigure(i, weight=1)
