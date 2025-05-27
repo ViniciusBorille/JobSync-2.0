@@ -1,9 +1,10 @@
-from tkinter import Tk, Toplevel, Frame, Label, Entry, Text, Button, messagebox, scrolledtext, ttk
+# ui.py (atualizado com LinkedIn)
+from tkinter import Tk, Toplevel, Frame, Label, Entry, Text, Button, messagebox, scrolledtext, filedialog
+from PIL import Image, ImageTk
 from gemini_api import gerar_curriculo_gemini
 from arquivo import salvar_como_pdf, salvar_como_docx
 from util import corrigir_caracteres
-from db import salvar_curriculo_no_banco, listar_curriculos, obter_curriculo_por_id
-from tkinter import filedialog
+from linkedin_api import iniciar_login_linkedin, obter_dados_basicos
 
 def iniciar_interface():
     root = Tk()
@@ -21,30 +22,39 @@ def iniciar_interface():
         entrada.pack(fill="x", pady=3)
         campos[texto] = entrada
 
-    imagem_path = None  # variável global para armazenar caminho da imagem
-
-    def selecionar_imagem():
-        nonlocal imagem_path
-        caminho = filedialog.askopenfilename(filetypes=[("Imagens", "*.png;*.jpg;*.jpeg")])
-        if caminho:
-            imagem_path = caminho
-            messagebox.showinfo("Imagem Selecionada", f"Imagem escolhida: {caminho}")
-
     def obter_texto(campo):
         widget = campos[campo]
-        if isinstance(widget, Text):
-            return widget.get("1.0", "end").strip()
-        return widget.get().strip()
+        return widget.get("1.0", "end").strip() if isinstance(widget, Text) else widget.get().strip()
 
     def mostrar_previa(texto):
         preview = Toplevel(root)
         preview.title("Prévia do Currículo")
+
+        imagem_path = None
+        img_label = Label(preview)
+        img_label.pack(pady=5)
+
+        def selecionar_imagem():
+            nonlocal imagem_path
+            caminho = filedialog.askopenfilename(filetypes=[("Imagens", "*.png;*.jpg;*.jpeg")])
+            if caminho:
+                imagem_path = caminho
+                try:
+                    img = Image.open(caminho).resize((100, 100))
+                    img_tk = ImageTk.PhotoImage(img)
+                    img_label.config(image=img_tk)
+                    img_label.image = img_tk
+                except Exception as e:
+                    print("Erro ao carregar imagem:", e)
+
+        Button(preview, text="Selecionar Imagem de Perfil", command=selecionar_imagem).pack(pady=5)
+
         texto_area = scrolledtext.ScrolledText(preview, font=("Arial", 12))
         texto_area.pack(expand=True, fill="both")
         texto_area.insert("1.0", texto)
 
-        Button(preview, text="Salvar como PDF", command=lambda: salvar_como_pdf(texto_area.get("1.0", "end"))).pack(pady=5)
-        Button(preview, text="Salvar como DOCX", command=lambda: salvar_como_docx(texto_area.get("1.0", "end"))).pack(pady=5)
+        Button(preview, text="Salvar como PDF", command=lambda: salvar_como_pdf(texto_area.get("1.0", "end"), imagem_path)).pack(pady=5)
+        Button(preview, text="Salvar como DOCX", command=lambda: salvar_como_docx(texto_area.get("1.0", "end"), imagem_path)).pack(pady=5)
 
     def gerar_e_mostrar():
         dados = {
@@ -64,37 +74,18 @@ def iniciar_interface():
         if "Erro" in texto:
             messagebox.showerror("Erro", texto)
             return
-        salvar_curriculo_no_banco(dados, texto)
         mostrar_previa(texto)
-
-    def carregar_curriculo():
-        lista = listar_curriculos()
-        if not lista:
-            messagebox.showinfo("Nenhum currículo", "Nenhum currículo salvo encontrado.")
-            return
-        seletor = Toplevel(root)
-        seletor.title("Selecionar Currículo")
-        opcoes = [f"{id} - {nome}" for id, nome in lista]
-        id_map = {f"{id} - {nome}": id for id, nome in lista}
-        combo = ttk.Combobox(seletor, values=opcoes)
-        combo.pack(padx=10, pady=10)
-        def abrir():
-            escolhido = combo.get()
-            if escolhido:
-                texto = obter_curriculo_por_id(id_map[escolhido])
-                mostrar_previa(texto)
-        Button(seletor, text="Abrir", command=abrir).pack(pady=5)
 
     def preencher_exemplo():
         exemplos = {
             "Nome": "José da Silva",
             "Cargo Desejado": "Auxiliar Administrativo",
-            "Contato": "Telefone: (11) 98888-1234\nE-mail: jose@email.com",
-            "Experiência": "Empresa X - 2018 a 2023\nFunção: Atendimento ao Cliente",
-            "Educação": "Ensino Médio Completo - Escola Estadual Y",
-            "Habilidades": "Pacote Office, Comunicação, Organização",
-            "Projetos": "Sistema de controle interno",
-            "Idiomas": "Português (Nativo), Inglês (Básico)"
+            "Contato": "(11) 98888-1234 | jose@email.com",
+            "Experiência": "Empresa X | 2018 - 2023\nAtendimento ao Cliente",
+            "Educação": "Ensino Médio Completo | Escola Estadual Y",
+            "Habilidades": "Pacote Office\nComunicação\nOrganização",
+            "Projetos": "Sistema de controle interno (descrição breve e concisa do projeto, se possível)",
+            "Idiomas": "Português (Nativo)\nInglês (Básico)"
         }
         for campo, valor in exemplos.items():
             widget = campos[campo]
@@ -104,6 +95,23 @@ def iniciar_interface():
             else:
                 widget.delete(0, "end")
                 widget.insert(0, valor)
+
+    def importar_dados_do_linkedin():
+        try:
+            iniciar_login_linkedin()
+            dados = obter_dados_basicos()
+            if not dados:
+                messagebox.showerror("Erro", "Não foi possível obter dados do LinkedIn.")
+                return
+            campos["Nome"].delete(0, "end")
+            campos["Nome"].insert(0, dados["nome"])
+            campos["Cargo Desejado"].delete(0, "end")
+            campos["Cargo Desejado"].insert(0, dados["cargo"])
+            campos["Contato"].delete("1.0", "end")
+            campos["Contato"].insert("1.0", dados["contato"])
+            messagebox.showinfo("Sucesso", "Dados importados do LinkedIn com sucesso!")
+        except Exception as e:
+            messagebox.showerror("Erro", f"Falha ao importar do LinkedIn: {e}")
 
     frame = Frame(root, padx=10, pady=10)
     frame.pack(fill="both", expand=True)
@@ -117,6 +125,6 @@ def iniciar_interface():
 
     Button(root, text="Gerar Currículo", font=("Arial", 12), command=gerar_e_mostrar).pack(pady=5)
     Button(root, text="Preencher com Exemplo", font=("Arial", 12), command=preencher_exemplo).pack(pady=5)
-    Button(root, text="Ver Currículos Salvos", font=("Arial", 12), command=carregar_curriculo).pack(pady=5)
+    Button(root, text="Importar do LinkedIn", font=("Arial", 12), command=importar_dados_do_linkedin).pack(pady=5)
 
     root.mainloop()
