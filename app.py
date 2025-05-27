@@ -208,7 +208,7 @@ def salvar_como_pdf(texto):
     pdf.output(file_path)
     messagebox.showinfo("Sucesso", f"Currículo salvo em: {file_path}")
 
-def mostrar_previa(texto):
+def mostrar_previa(texto, imagem=None):
     preview_window = Toplevel(root)
     preview_window.title("Prévia do Currículo")
 
