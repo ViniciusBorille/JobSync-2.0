@@ -1,25 +1,23 @@
-# ui.py (atualizado com LinkedIn)
-from tkinter import Tk, Toplevel, Frame, Label, Entry, Text, Button, messagebox, scrolledtext, filedialog
+from tkinter import Tk, Toplevel, Frame, Label, Entry, Text, Button, messagebox, scrolledtext, filedialog, Listbox, SINGLE
 from PIL import Image, ImageTk
 from gemini_api import gerar_curriculo_gemini
 from arquivo import salvar_como_pdf, salvar_como_docx
 from util import corrigir_caracteres
-from linkedin_api import iniciar_login_linkedin, obter_dados_basicos
+from db import salvar_curriculo_no_banco, listar_curriculos, obter_curriculo_por_id
 
 def iniciar_interface():
     root = Tk()
     root.title("Gerador de Currículos com Gemini")
+    root.configure(bg="#e6f0fa")
 
     campos = {}
 
     def criar_campo(master, texto, altura=1):
-        label = Label(master, text=texto, font=("Arial", 12, "bold"))
-        label.pack(anchor="w")
-        if altura == 1:
-            entrada = Entry(master, font=("Arial", 12))
-        else:
-            entrada = Text(master, font=("Arial", 12), height=altura, width=50)
-        entrada.pack(fill="x", pady=3)
+        label = Label(master, text=texto, font=("Arial", 12, "bold"), bg="#e6f0fa", fg="#003366")
+        label.pack(anchor="w", pady=(5, 0))
+        entrada = Entry(master, font=("Arial", 12), relief="groove", bd=2) if altura == 1 else \
+                  Text(master, font=("Arial", 12), height=altura, width=50, relief="groove", bd=2)
+        entrada.pack(fill="x", pady=3, ipady=4)
         campos[texto] = entrada
 
     def obter_texto(campo):
@@ -29,9 +27,9 @@ def iniciar_interface():
     def mostrar_previa(texto):
         preview = Toplevel(root)
         preview.title("Prévia do Currículo")
-
+        preview.configure(bg="#e6f0fa")
         imagem_path = None
-        img_label = Label(preview)
+        img_label = Label(preview, bg="#e6f0fa")
         img_label.pack(pady=5)
 
         def selecionar_imagem():
@@ -47,47 +45,44 @@ def iniciar_interface():
                 except Exception as e:
                     print("Erro ao carregar imagem:", e)
 
-        Button(preview, text="Selecionar Imagem de Perfil", command=selecionar_imagem).pack(pady=5)
+        Button(preview, text="🖼 Selecionar Imagem de Perfil", command=selecionar_imagem,
+               bg="#336699", fg="white", font=("Arial", 11, "bold")).pack(pady=5)
 
         texto_area = scrolledtext.ScrolledText(preview, font=("Arial", 12))
         texto_area.pack(expand=True, fill="both")
         texto_area.insert("1.0", texto)
 
-        Button(preview, text="Salvar como PDF", command=lambda: salvar_como_pdf(texto_area.get("1.0", "end"), imagem_path)).pack(pady=5)
-        Button(preview, text="Salvar como DOCX", command=lambda: salvar_como_docx(texto_area.get("1.0", "end"), imagem_path)).pack(pady=5)
+        Button(preview, text="📄 Salvar como PDF", command=lambda: salvar_como_pdf(texto_area.get("1.0", "end"), imagem_path),
+               bg="#005580", fg="white", font=("Arial", 11, "bold")).pack(pady=5)
+
+        Button(preview, text="📝 Salvar como DOCX", command=lambda: salvar_como_docx(texto_area.get("1.0", "end"), imagem_path),
+               bg="#005580", fg="white", font=("Arial", 11, "bold")).pack(pady=5)
 
     def gerar_e_mostrar():
-        dados = {
-            "nome": corrigir_caracteres(obter_texto("Nome")),
-            "cargo": corrigir_caracteres(obter_texto("Cargo Desejado")),
-            "contato": corrigir_caracteres(obter_texto("Contato")),
-            "experiencia": obter_texto("Experiência"),
-            "educacao": obter_texto("Educação"),
-            "habilidades": obter_texto("Habilidades"),
-            "projetos": obter_texto("Projetos"),
-            "idiomas": obter_texto("Idiomas")
-        }
-        if not dados["nome"] or not dados["cargo"]:
-            messagebox.showwarning("Campos obrigatórios", "Nome e Cargo são obrigatórios.")
+        dados = {chave: corrigir_caracteres(obter_texto(chave)) if chave in ["Nome", "Vaga Pretendida", "Contato"]
+                 else obter_texto(chave) for chave in ["Nome", "Vaga Pretendida", "Contato", "Experiência", "Educação", "Habilidades", "Projetos", "Idiomas"]}
+        if not dados["Nome"] or not dados["Vaga Pretendida"]:
+            messagebox.showwarning("Campos obrigatórios", "Nome e Vaga Pretendida são obrigatórios.")
             return
         texto = gerar_curriculo_gemini(dados)
         if "Erro" in texto:
             messagebox.showerror("Erro", texto)
             return
+        salvar_curriculo_no_banco(dados, texto)
         mostrar_previa(texto)
 
     def preencher_exemplo():
-        exemplos = {
+        exemplo = {
             "Nome": "José da Silva",
-            "Cargo Desejado": "Auxiliar Administrativo",
+            "Vaga Pretendida": "Auxiliar Administrativo",
             "Contato": "(11) 98888-1234 | jose@email.com",
             "Experiência": "Empresa X | 2018 - 2023\nAtendimento ao Cliente",
             "Educação": "Ensino Médio Completo | Escola Estadual Y",
             "Habilidades": "Pacote Office\nComunicação\nOrganização",
-            "Projetos": "Sistema de controle interno (descrição breve e concisa do projeto, se possível)",
+            "Projetos": "Sistema de controle interno",
             "Idiomas": "Português (Nativo)\nInglês (Básico)"
         }
-        for campo, valor in exemplos.items():
+        for campo, valor in exemplo.items():
             widget = campos[campo]
             if isinstance(widget, Text):
                 widget.delete("1.0", "end")
@@ -96,35 +91,78 @@ def iniciar_interface():
                 widget.delete(0, "end")
                 widget.insert(0, valor)
 
-    def importar_dados_do_linkedin():
-        try:
-            iniciar_login_linkedin()
-            dados = obter_dados_basicos()
-            if not dados:
-                messagebox.showerror("Erro", "Não foi possível obter dados do LinkedIn.")
-                return
-            campos["Nome"].delete(0, "end")
-            campos["Nome"].insert(0, dados["nome"])
-            campos["Cargo Desejado"].delete(0, "end")
-            campos["Cargo Desejado"].insert(0, dados["cargo"])
-            campos["Contato"].delete("1.0", "end")
-            campos["Contato"].insert("1.0", dados["contato"])
-            messagebox.showinfo("Sucesso", "Dados importados do LinkedIn com sucesso!")
-        except Exception as e:
-            messagebox.showerror("Erro", f"Falha ao importar do LinkedIn: {e}")
+    def ver_curriculos_salvos():
+        janela = Toplevel(root)
+        janela.title("Currículos Salvos")
+        janela.configure(bg="#e6f0fa")
 
-    frame = Frame(root, padx=10, pady=10)
+        Label(janela, text="🔍 Filtrar por nome:", font=("Arial", 10, "bold"), bg="#e6f0fa", fg="#003366").pack()
+        entrada_filtro = Entry(janela, font=("Arial", 12), relief="groove", bd=2)
+        entrada_filtro.pack(pady=5)
+
+        lista = Listbox(janela, width=50, height=15, selectmode=SINGLE, font=("Arial", 12))
+        lista.pack(pady=10)
+
+        todos = listar_curriculos()
+        for id_, nome in todos:
+            lista.insert("end", f"{id_} - {nome}")
+
+        def filtrar():
+            termo = entrada_filtro.get().lower()
+            lista.delete(0, "end")
+            for id_, nome in todos:
+                if termo in nome.lower():
+                    lista.insert("end", f"{id_} - {nome}")
+
+        def visualizar():
+            selecao = lista.curselection()
+            if not selecao:
+                messagebox.showwarning("Seleção necessária", "Selecione um currículo.")
+                return
+            linha = lista.get(selecao[0])
+            id_curriculo = int(linha.split(" - ")[0])
+            texto = obter_curriculo_por_id(id_curriculo)
+            mostrar_previa(texto)
+
+        Button(janela, text="🔍 Aplicar Filtro", command=filtrar,
+               bg="#336699", fg="white", font=("Arial", 11, "bold")).pack(pady=2)
+
+        Button(janela, text="👁 Visualizar", command=visualizar,
+               bg="#003366", fg="white", font=("Arial", 11, "bold")).pack(pady=5)
+
+    def aplicar_hover(botao, cor_hover, cor_original):
+        botao.bind("<Enter>", lambda e: botao.config(bg=cor_hover))
+        botao.bind("<Leave>", lambda e: botao.config(bg=cor_original))
+
+    frame = Frame(root, padx=10, pady=10, bg="#e6f0fa")
     frame.pack(fill="both", expand=True)
 
     for campo, altura in [
-        ("Nome", 1), ("Cargo Desejado", 1), ("Contato", 3),
+        ("Nome", 1), ("Vaga Pretendida", 1), ("Contato", 3),
         ("Experiência", 5), ("Educação", 4), ("Habilidades", 4),
         ("Projetos", 4), ("Idiomas", 3)
     ]:
         criar_campo(frame, campo, altura)
 
-    Button(root, text="Gerar Currículo", font=("Arial", 12), command=gerar_e_mostrar).pack(pady=5)
-    Button(root, text="Preencher com Exemplo", font=("Arial", 12), command=preencher_exemplo).pack(pady=5)
-    Button(root, text="Importar do LinkedIn", font=("Arial", 12), command=importar_dados_do_linkedin).pack(pady=5)
+    Label(frame, text="O currículo será personalizado de acordo com a vaga pretendida.",
+          font=("Arial", 10), bg="#e6f0fa", fg="#003366").pack(anchor="w", pady=(0, 10))
+
+    botoes_frame = Frame(root, bg="#e6f0fa")
+    botoes_frame.pack(pady=12)
+
+    btn_gerar = Button(botoes_frame, text="🚀 Gerar Currículo", font=("Arial", 12, "bold"),
+                       bg="#003366", fg="white", relief="ridge", bd=3, width=20, command=gerar_e_mostrar)
+    btn_gerar.pack(side="left", padx=10)
+    aplicar_hover(btn_gerar, "#005599", "#003366")
+
+    btn_exemplo = Button(botoes_frame, text="✨ Preencher com Exemplo", font=("Arial", 12, "bold"),
+                         bg="#336699", fg="white", relief="ridge", bd=2, width=23, command=preencher_exemplo)
+    btn_exemplo.pack(side="left", padx=10)
+    aplicar_hover(btn_exemplo, "#4d88cc", "#336699")
+
+    btn_ver = Button(botoes_frame, text="📂 Ver Currículos Salvos", font=("Arial", 12, "bold"),
+                     bg="#005580", fg="white", relief="ridge", bd=2, width=23, command=ver_curriculos_salvos)
+    btn_ver.pack(side="left", padx=10)
+    aplicar_hover(btn_ver, "#0077aa", "#005580")
 
     root.mainloop()
